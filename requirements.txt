@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+langgraph
+langchain
+langchain-core
+langchain-openai
+langchain-anthropic
+crewai
+crewai-tools
+pydantic
+python-dotenv
+httpx
+sqlmodel
+psycopg2-binary
+PyGithub
+boto3
