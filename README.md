@@ -276,7 +276,7 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 
 ## 👨‍💻 Author
 
-**Ismail Sajid**  
+**Daniel Lopez**  
 *Expert AI Agent Engineer*
 
 Built with ❤️ using agentic AI architecture
