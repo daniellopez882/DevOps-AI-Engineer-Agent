@@ -1,27 +1,38 @@
-FROM python:3.11-slim
+FROM python:3.12-slim AS build
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
-
-# Install required system packages
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc curl build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set working directory
 WORKDIR /app
+ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Install Python dependencies
 COPY requirements.txt .
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt --no-cache-dir
+RUN python -m venv /opt/venv \
+ && /opt/venv/bin/pip install --upgrade pip \
+ && /opt/venv/bin/pip install -r requirements.txt
 
-# Copy application files
-COPY . .
 
-# Expose port for FastAPI
+FROM python:3.12-slim AS runtime
+
+RUN useradd --create-home --uid 10001 app
+
+WORKDIR /app
+COPY --from=build /opt/venv /opt/venv
+# Only the application modules. The previous image did `COPY . .`, which
+# would have baked a local .env -- every provider key -- into the image.
+COPY --chown=app:app *.py ./
+
+RUN mkdir -p /app/data && chown app:app /app/data
+VOLUME ["/app/data"]
+
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    DATABASE_URL=sqlite:////app/data/devops_os.db \
+    BIND_HOST=0.0.0.0 \
+    PORT=8000
+
+USER app
 EXPOSE 8000
 
-# Start server using default Uvicorn command
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status == 200 else 1)"]
+
+CMD ["sh", "-c", "uvicorn main:app --host ${BIND_HOST} --port ${PORT}"]
