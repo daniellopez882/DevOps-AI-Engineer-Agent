@@ -7,3 +7,9 @@ __pycache__/
 .idea/
 .vscode/
 node_modules/
+
+# Tooling
+.venv312/
+.pytest_cache/
+.ruff_cache/
+*.db
