@@ -1263,7 +1263,7 @@ def build_agent_prompt(base_prompt: str, include_guardrails: bool = True) -> str
         final_prompt = build_agent_prompt(CODE_REVIEW_PROMPT)
     """
     if include_guardrails:
-        return base_prompt.strip() + "\\n\\n" + GUARDRAILS_PROMPT.strip()
+        return base_prompt.strip() + "\n\n" + GUARDRAILS_PROMPT.strip()
     return base_prompt.strip()
 
 
@@ -1306,9 +1306,9 @@ Monthly Budget:   {project_profile.get('monthly_budget', 'N/A')}
 Compliance:       {', '.join(project_profile.get('compliance', []))}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
-    full_prompt = base_prompt.strip() + "\\n\\n" + project_context
+    full_prompt = base_prompt.strip() + "\n\n" + project_context
     if include_guardrails:
-        full_prompt += "\\n\\n" + GUARDRAILS_PROMPT.strip()
+        full_prompt += "\n\n" + GUARDRAILS_PROMPT.strip()
     return full_prompt
 
 
