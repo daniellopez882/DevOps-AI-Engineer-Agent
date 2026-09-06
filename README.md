@@ -1,301 +1,200 @@
-# DevOps OS 🚀
+# DevOps OS
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com/)
-[![LangGraph](https://img.shields.io/badge/LangGraph-AI_Orchestration-purple.svg)](https://langchain-ai.github.io/langgraph/)
-[![CrewAI](https://img.shields.io/badge/CrewAI-Multi_Agent-orange.svg)](https://www.crewai.com/)
+[![CI](https://github.com/daniellopez882/DevOps-AI-Engineer-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/daniellopez882/DevOps-AI-Engineer-Agent/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-> **An autonomous AI-powered DevOps operating system** that orchestrates CI/CD, PR reviews, site reliability, architecture decisions, and incident management—without waking up human engineers at 3 AM.
+A webhook-driven router that hands CI/CD, review, incident and infrastructure
+events to six specialist agents (LangGraph for routing, crewai for the
+agents), records every run in an audit trail, and — by default — **describes
+what it would do instead of doing it**.
 
----
+## At a glance
 
-## 🎯 Vision
+| | |
+|---|---|
+| **Does** | Verify a signed webhook → route by trigger → run one specialist → record the outcome (`completed` / `needs_human` / `failed`) with the confidence the model reported, or none |
+| **Writes outside itself** | Only with `DRY_RUN=false` **and** the repository on `ALLOWED_REPOS`: a pull-request comment, or a PagerDuty acknowledge / resolve / note |
+| **Refuses** | Unsigned or unkeyed events; unknown triggers; a PR event without `pr_number`; a PagerDuty event without `incident_id`; production without an inbound secret |
+| **Not implemented** | CI log fetching, security scanning, documentation updates. The tools say `not_implemented` — they used to return a hardcoded log, a fabricated CVE and "Successfully updated" |
+| **Tests** | 94 — none reach a network, a model, GitHub, PagerDuty or AWS |
+| **CI** | lint · tests on 3.11/3.12 · `DRY_RUN` asserted on by default · server booted and its contract exercised · bandit (fails the job) · gitleaks · container built, non-root, refused on an open production config |
 
-Traditional DevOps is broken. Engineers burn out from alert fatigue, PR reviews bottleneck releases, and infrastructure waste goes unnoticed. **DevOps OS** changes the game by deploying a **swarm of specialized AI agents** that work 24/7 with the expertise of a 50-year veteran engineer.
-
-Built with cutting-edge **agentic AI architecture** using LangGraph for orchestration and CrewAI for specialist execution, powered by **Claude 3.5 Sonnet** and **GPT-4o**.
-
----
-
-## 🏗️ System Architecture
+## Architecture
 
 ```mermaid
-graph TD
-    A[Webhook Events] --> B[FastAPI Gateway]
-    B --> C[LangGraph Orchestrator]
-    C --> D[CodeReview Agent]
-    C --> E[CI Monitor Agent]
-    C --> F[Infra Optimizer Agent]
-    C --> G[Incident Responder Agent]
-    C --> H[Documentation Agent]
-    C --> I[Security Audit Agent]
-    D --> J[GitHub PR Comments]
-    E --> K[Auto-Fix Proposals]
-    F --> L[AWS Cost Optimization]
-    G --> M[PagerDuty Auto-Resolve]
-    H --> N[Auto-Generated Docs]
-    I --> O[Security Reports]
+flowchart LR
+    GH[GitHub / CI / PagerDuty<br/>or a manual call] -->|POST /webhook<br/>X-Hub-Signature-256 or X-API-Key| API[FastAPI]
+    API -->|202 + event_id| GH
+    API --> Q[(background task)]
+    Q --> R{router<br/>trigger_type}
+    R -->|pr_opened| CR[code review]
+    R -->|ci_failed| CI[CI monitor]
+    R -->|scheduled_infra| IN[infra cost]
+    R -->|pagerduty| IR[incident responder]
+    R -->|pr_merged| DO[documentation]
+    R -->|scheduled_security| SE[security audit]
+    R -->|manual / unknown| H[needs_human]
+    CR & CI & IN & IR & DO & SE --> T{tools}
+    T -->|DRY_RUN on| D[describe the write]
+    T -->|DRY_RUN off + allowlisted| W[(GitHub comment /<br/>PagerDuty status)]
+    T -->|no integration| NI[not_implemented]
+    CR & CI & IN & IR & DO & SE & H --> A[(audit row:<br/>status · agents · confidence · errors)]
+    A --> E[GET /events/id]
+    classDef guard fill:#f59e0b,color:#111,stroke:#b45309
+    classDef safe fill:#065f46,color:#ecfdf5,stroke:#047857
+    class R,T guard
+    class D,NI,H safe
 ```
 
-### Core Components
+### One event
 
-| Component | Technology | Purpose |
-|-----------|-----------|---------|
-| **Orchestrator** | LangGraph | Intelligent event routing and priority mapping |
-| **Specialist Agents** | CrewAI | Domain-specific DevOps expertise |
-| **API Layer** | FastAPI | High-performance webhook ingestion |
-| **LLM Backend** | Claude 3.5 + GPT-4o | Reasoning and code analysis |
-| **Audit Trail** | PostgreSQL | Complete system observability |
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as Sender
+    participant A as API
+    participant G as Graph
+    participant C as Specialist (crewai)
+    participant X as GitHub / PagerDuty
+    participant DB as Audit trail
 
----
+    S->>A: POST /webhook + signature
+    A->>A: verify HMAC-SHA256 (or X-API-Key); validate trigger, repo, size
+    A-->>S: 202 {event_id, status: queued, dry_run}
+    A->>DB: start_run(event_id)
+    A->>G: invoke(state)
+    G->>G: route by trigger; refuse if an identifier is missing
+    G->>C: task
+    C->>X: tool call
+    alt DRY_RUN (default)
+        X-->>C: "dry_run: would post … / would resolve …"
+    else live and allowlisted
+        X-->>C: done
+    end
+    C-->>G: JSON (parsed; confidence kept only if reported)
+    G->>DB: finish_run(status, agents, confidence, errors)
+    S->>A: GET /events/{event_id}
+    A-->>S: the audit row
+```
 
-## 🤖 Agent Roster
-
-### 1. **CodeReviewAgent** — Senior Staff Engineer
-- **Mission**: Meticulous PR analysis with security-first mindset
-- **Capabilities**: 
-  - SOLID principles verification
-  - Security vulnerability detection
-  - Code quality scoring
-  - Auto-comments on GitHub PRs
-
-### 2. **CIMonitorAgent** — CI/CD Intelligence Engineer
-- **Mission**: Diagnose pipeline failures with surgical precision
-- **Capabilities**:
-  - Build log parsing and root cause analysis
-  - Auto-fix PR generation
-  - Flaky test detection
-  - Performance regression alerts
-
-### 3. **InfraOptimizerAgent** — Cloud Cost Architect
-- **Mission**: Eliminate infrastructure waste across multi-cloud
-- **Capabilities**:
-  - EC2 right-sizing recommendations
-  - Unused resource detection
-  - Terraform IaC optimization proposals
-  - Cost anomaly alerts
-
-### 4. **IncidentResponder** — Site Reliability Engine
-- **Mission**: P1 incident response in <5 minutes
-- **Capabilities**:
-  - PagerDuty auto-acknowledgement
-  - Runbook execution
-  - Auto-mitigation actions
-  - Human escalation when needed
-
-### 5. **DocumentationAgent** — Technical Writer
-- **Mission**: Keep docs in sync with code
-- **Capabilities**:
-  - Auto-generate API docs post-merge
-  - README updates
-  - Architecture diagram maintenance
-
-### 6. **SecurityAuditAgent** — InfoSec Engineer
-- **Mission**: Continuous security compliance
-- **Capabilities**:
-  - SAST/SCA scanning integration
-  - CVE detection in dependencies
-  - OWASP compliance checks
-  - Secret detection in code
-
----
-
-## ⚡ Quick Start
-
-### Prerequisites
-
-- Python 3.10+
-- API keys for OpenAI and Anthropic
-- Optional: GitHub, AWS, PagerDuty credentials for full functionality
-
-### Installation
+## Quick start
 
 ```bash
-# Clone the repository
-git clone https://github.com/daniellopez882/DevOps-AI-Engineer-Agent.git
-cd DevOps-AI-Engineer-Agent
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Windows: .\venv\Scripts\activate
-
-# Install dependencies
+python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+cp .env.example .env                              # set API_KEY or WEBHOOK_SECRET, and a provider key
+uvicorn main:app --reload
 ```
 
-### Configuration
+Send an event and read its outcome:
 
 ```bash
-# Copy environment template
-cp .env.example .env
-
-# Edit .env with your API keys
-# Required: OPENAI_API_KEY, ANTHROPIC_API_KEY
-# Optional: GITHUB_TOKEN, AWS credentials, PAGERDUTY_API_KEY
+curl -s -X POST http://127.0.0.1:8000/webhook -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
+  -d '{"trigger_type":"pr_opened","repo":"octo/repo","payload":{"pr_number":42}}'
+# {"event_id":"…","status":"queued","trigger_type":"pr_opened","dry_run":true}
+curl -s http://127.0.0.1:8000/events/<event_id>
 ```
 
-### Launch the System
+GitHub deliveries are verified with `WEBHOOK_SECRET` over the raw body
+(`X-Hub-Signature-256`). The body schema is this service's own — see
+Limits.
+
+### Containers
 
 ```bash
-# Start the FastAPI server
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+docker build -t devops-os .
+docker run --rm -p 8000:8000 --env-file .env -v devops-data:/app/data devops-os
+# or the API plus Postgres:
+POSTGRES_PASSWORD=… docker compose up --build
 ```
 
-📡 **API Docs**: Visit `http://localhost:8000/docs` for interactive Swagger UI
+With `ENVIRONMENT=production` and neither `WEBHOOK_SECRET` nor `API_KEY` set,
+the container exits non-zero instead of serving an open webhook.
 
----
+## Configuration
 
-## 🧪 Testing the Orchestrator
+| Variable | Default | Notes |
+|---|---|---|
+| `WEBHOOK_SECRET` · `API_KEY` | *(empty)* | At least one is required in production |
+| `DRY_RUN` | **`true`** | Writes are described, not performed. A blank value keeps the default |
+| `ALLOWED_REPOS` | *(empty)* | Exact `owner/name` list the GitHub tools may touch. Empty = none |
+| `ANTHROPIC_API_KEY` · `ANTHROPIC_MODEL` | — · `claude-sonnet-5` | Review, incident, documentation, security agents |
+| `OPENAI_API_KEY` · `OPENAI_MODEL` | — · `gpt-4o` | CI and infrastructure agents |
+| `GITHUB_TOKEN` · `PAGERDUTY_API_KEY` · `PAGERDUTY_FROM_EMAIL` · `AWS_*` | — | Only used when the corresponding tool runs live |
+| `DATABASE_URL` | `sqlite:///./devops_os.db` | Audit trail; Postgres via compose |
 
-Fire a test event through the webhook:
+## API
 
-```bash
-curl -X POST http://localhost:8000/webhook \
-  -H "Content-Type: application/json" \
-  -d '{
-    "trigger_type": "pr_opened",
-    "repo": "your-org/your-repo",
-    "branch": "main",
-    "payload": {"pr_number": 42}
-  }'
+| Route | Auth | Purpose |
+|---|:-:|---|
+| `POST /webhook` | signature or key | `{"trigger_type", "repo"?, "branch"?, "commit_sha"?, "payload"?}` → `202` with an event id |
+| `GET /events/{id}` | — | The audit row: status, agents, confidence, errors, dry-run flag |
+| `GET /health` · `GET /ready` | — | Liveness · readiness with per-check detail (database, auth, providers, write mode) |
+
+Triggers: `pr_opened`, `ci_failed`, `scheduled_infra`, `pagerduty`,
+`pr_merged`, `scheduled_security`, `manual` (recorded for a human; nothing
+runs).
+
+## What changed, and why
+
+Every defect below was reproduced on the original code before it was fixed.
+
+| # | Defect | Effect |
+|--:|---|---|
+| 1 | `POST /webhook` accepted any caller and any `trigger_type` | `{"trigger_type":"nonsense"}` from anyone → `200 accepted` |
+| 2 | PagerDuty tool: `"acknowledged" if action == "acknowledge" else "resolved"` | An agent told to "escalate via note" **resolved the incident** |
+| 3 | `incident_id` defaulted to `INC0001`; `pr_number` to `1` | A PagerDuty event without an id acted on INC0001; a PR event without a number reviewed and commented on PR #1 |
+| 4 | `fetch_ci_logs` returned a hardcoded `ModuleNotFoundError` log for any id | The CI agent diagnosed fiction |
+| 5 | `security_scan` returned a hardcoded `CVE-2024-xyz` for any repo | The security agent reported fiction |
+| 6 | `update_documentation` returned "Successfully updated" and did nothing | Fake success into the audit log |
+| 7 | `confidence=0.99` written to the audit log for every run | Including runs that routed nowhere |
+| 8 | No allowlist, no dry run | Any model output could comment on any PR the token reached |
+| 9 | The router appended to `messages` in place and returned the list | Under `add_messages` the history doubled every step (4 messages where 2 were expected) |
+| 10 | `state.get("repo", payload.get("repo"))` | The key exists as `None`, so the fallback never ran |
+| 11 | `build_agent_prompt` joined with `"\\n\\n"` | Every agent's system prompt contained the literal text `\n\n` instead of a line break |
+| 12 | Six model clients built per node, `claude-3-5-sonnet-20240620` hardcoded | Every node needed both providers' keys; the Anthropic model is retired |
+
+<details>
+<summary>Also</summary>
+
+Exceptions printed and swallowed (a failed run left no record); `print` everywhere; `datetime.utcnow`; the engine created at import; `event.dict()`; a root-running image that `COPY . .`'d the whole tree (a local `.env` included); compose with a hardcoded database password and the source mounted into the container; no `/health`, no `/ready`, no way to learn what happened to an event; an API description promising "50-year engineering expertise"; a README naming models the code hardcoded elsewhere and a human-in-the-loop the code never implemented.
+
+</details>
+
+## Design notes
+
+| Record | Decision |
+|---|---|
+| [ADR 0001](docs/adr/0001-dry-run-by-default.md) | Dry run is the default; writes need an allowlist |
+| [ADR 0002](docs/adr/0002-signed-webhooks.md) | Every event is signed or keyed, validated, and answered with an id |
+| [ADR 0003](docs/adr/0003-refuse-to-guess.md) | Missing identifiers are refusals, not defaults; tools without an integration say so |
+| [Threat model](docs/threat-model.md) | Assets, seven threats, what is not addressed |
+
+## Layout
+
+```
+main.py                  FastAPI: signed /webhook, /events/{id}, /health, /ready
+security.py              HMAC-SHA256 signature and API-key checks
+agent_graph.py           router + six nodes; refusals; audit start/finish
+crew_agents.py           one crewai agent per specialist, one model each
+tools.py                 GitHub, PagerDuty, AWS Cost Explorer; honest stubs
+llm.py                   crewai LLM factories with explicit keys; the test seam
+database.py              audit rows (SQLModel); redaction
+config.py                settings; DRY_RUN default True
+tasks.py                 crewai task descriptions
+devops_agent_prompts.py  the agent prompts
+tests/                   94 tests
+docs/                    ADRs, threat model
 ```
 
-Watch the terminal for real-time agent execution logs.
+## Limits
 
----
+- The webhook body is this service's schema, not GitHub's native payload. A real GitHub webhook needs a small translator in front (map `pull_request.opened` → `pr_opened` etc.); the signature check already matches GitHub's.
+- Events run as FastAPI background tasks in one process: no queue, no retry, no concurrency limit.
+- Three of the seven tools have no integration and say so. Nothing here has been run against a model.
+- The prompts describe controls (Terraform plan/apply gates, cost thresholds, dead-letter queues) that the code does not implement. `DRY_RUN`, the allowlist and the refusals are what exists.
 
-## 📊 Event Routing Matrix
+## Licence
 
-| Trigger Type | Activated Agent | Priority | Response Time |
-|--------------|-----------------|----------|---------------|
-| `pr_opened` | CodeReviewAgent | P3 | ~30 seconds |
-| `ci_failed` | CIMonitorAgent | P2 | ~15 seconds |
-| `scheduled_infra` | InfraOptimizerAgent | P4 | Weekly |
-| `pagerduty` | IncidentResponder | P1 | <5 minutes |
-| `pr_merged` | DocumentationAgent | P3 | Post-merge |
-| `scheduled_security` | SecurityAuditAgent | P4 | Weekly |
-
----
-
-## 🛠️ Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| **Orchestration** | LangGraph, CrewAI |
-| **API Framework** | FastAPI, Uvicorn |
-| **LLM Providers** | Anthropic Claude 3.5, OpenAI GPT-4o |
-| **Integrations** | GitHub API, AWS SDK, PagerDuty API |
-| **Database** | PostgreSQL (audit trails) |
-| **Deployment** | Docker, Docker Compose |
-
----
-
-## 📁 Project Structure
-
-```
-DevOps-AI-Engineer-Agent/
-├── main.py                 # FastAPI entry point
-├── agent_graph.py          # LangGraph state machine
-├── crew_agents.py          # CrewAI agent definitions
-├── tools.py                # Integration tools (GitHub, AWS, PagerDuty)
-├── tasks.py                # Agent task specifications
-├── devops_agent_prompts.py # Prompt engineering templates
-├── llm_config.py           # LLM configuration
-├── database.py             # PostgreSQL audit logging
-├── .env.example            # Environment template
-├── docker-compose.yml      # Container orchestration
-└── requirements.txt        # Python dependencies
-```
-
----
-
-## 🔐 Security & Compliance
-
-- **No credentials stored in code** — All secrets via environment variables
-- **Audit trail logging** — Every agent action tracked in PostgreSQL
-- **Human-in-the-loop** — Critical actions require approval
-- **Rate limiting** — API protection against abuse
-
----
-
-## 🚀 Production Deployment
-
-### Docker Deployment
-
-```bash
-# Build and run with Docker Compose
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-```
-
-### Environment Variables (Production)
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `OPENAI_API_KEY` | OpenAI API credential | ✅ |
-| `ANTHROPIC_API_KEY` | Anthropic API credential | ✅ |
-| `GITHUB_TOKEN` | GitHub API token | ❌ |
-| `AWS_ACCESS_KEY_ID` | AWS credential | ❌ |
-| `AWS_SECRET_ACCESS_KEY` | AWS credential | ❌ |
-| `PAGERDUTY_API_KEY` | PagerDuty credential | ❌ |
-| `DATABASE_URL` | PostgreSQL connection string | ✅ |
-
----
-
-## 📈 Roadmap
-
-- [ ] **Slack Integration** — Real-time agent notifications
-- [ ] **Jira Sync** — Auto-create tickets for actionable items
-- [ ] **Multi-Cloud Support** — Azure, GCP cost optimization
-- [ ] **Custom Runbooks** — User-defined incident response playbooks
-- [ ] **Analytics Dashboard** — Grafana integration for agent metrics
-- [ ] **Learning Loop** — Agent performance feedback and improvement
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! This is an open-source project built with passion by the DevOps community.
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
-
----
-
-## 👨‍💻 Author
-
-**Daniel Lopez**  
-*Expert AI Agent Engineer*
-
-Built with ❤️ using agentic AI architecture
-
----
-
-## 🙏 Acknowledgments
-
-- [LangChain](https://python.langchain.com/) for LangGraph
-- [CrewAI](https://www.crewai.com/) for multi-agent orchestration
-- [FastAPI](https://fastapi.tiangolo.com/) for the blazing-fast API framework
-- [Anthropic](https://www.anthropic.com/) and [OpenAI](https://openai.com/) for LLM capabilities
-
----
-
-<div align="center">
-
-**🚀 DevOps OS — Where AI meets Infrastructure**
-
-[Report Bug](https://github.com/daniellopez882/DevOps-AI-Engineer-Agent/issues) · [Request Feature](https://github.com/daniellopez882/DevOps-AI-Engineer-Agent/issues) · [View Demo](http://localhost:8000/docs)
-
-</div>
+MIT — see [LICENSE](LICENSE).

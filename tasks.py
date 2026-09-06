@@ -1,5 +1,6 @@
 from crewai import Task
 
+
 def get_code_review_task(agent, repo: str, pr_number: int) -> Task:
     return Task(
         description=f"""
@@ -10,8 +11,9 @@ def get_code_review_task(agent, repo: str, pr_number: int) -> Task:
         Ensure you adhere to your rigorous FAANG-level expertise!
         """,
         expected_output="A JSON-formatted string matching the OUTPUT FORMAT specified in your system prompt.",
-        agent=agent
+        agent=agent,
     )
+
 
 def get_ci_monitor_task(agent, repo: str, run_id: str) -> Task:
     return Task(
@@ -21,8 +23,9 @@ def get_ci_monitor_task(agent, repo: str, run_id: str) -> Task:
         3. Generate an auto-fix diff if confidence > 0.90, else generate Slack alert payload.
         """,
         expected_output="A JSON-formatted string summarizing the failure and proposed fix, matching OUTPUT FORMAT.",
-        agent=agent
+        agent=agent,
     )
+
 
 def get_infra_optimization_task(agent) -> Task:
     return Task(
@@ -32,8 +35,9 @@ def get_infra_optimization_task(agent) -> Task:
         3. Outline Terraform drift and generate recommendations.
         """,
         expected_output="A complete JSON-formatted financial and infra optimization report.",
-        agent=agent
+        agent=agent,
     )
+
 
 def get_incident_responder_task(agent, incident_id: str) -> Task:
     return Task(
@@ -43,8 +47,9 @@ def get_incident_responder_task(agent, incident_id: str) -> Task:
         3. Attempt mitigation, or escalate via note if unrecoverable safely.
         """,
         expected_output="A JSON-formatted incident report covering start_time, mitigation notes, and next steps.",
-        agent=agent
+        agent=agent,
     )
+
 
 def get_documentation_task(agent, repo: str) -> Task:
     return Task(
@@ -54,8 +59,9 @@ def get_documentation_task(agent, repo: str) -> Task:
         3. Upload or push these changes to a repository or Confluence.
         """,
         expected_output="A JSON-formatted string matching the OUTPUT FORMAT specified in your system prompt.",
-        agent=agent
+        agent=agent,
     )
+
 
 def get_security_audit_task(agent, repo: str) -> Task:
     return Task(
@@ -65,5 +71,5 @@ def get_security_audit_task(agent, repo: str) -> Task:
         3. Outline dynamic scan findings mapping to OWASP top 10.
         """,
         expected_output="A complete JSON-formatted security posture report and action steps.",
-        agent=agent
+        agent=agent,
     )
